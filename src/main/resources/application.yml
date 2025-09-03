@@ -32,6 +32,9 @@ security:
     accessTokenExpiration: 86400000 # 24h
     refreshTokenExpiration: 2592000000 #30days
 
+otp:
+  expiration-minutes: 5 #5 minutes
+
 
 stripe:
   secret-key: ${STRIPE_SECRET_KEY}
