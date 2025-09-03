@@ -1,5 +1,6 @@
 package com.demo.backend.controller;
 
+import com.demo.backend.mappers.TaskMapper;
 import com.demo.backend.model.Task;
 import com.demo.backend.model.User;
 import com.demo.backend.repository.TaskRepository;
@@ -7,6 +8,7 @@ import com.demo.backend.repository.UserRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -14,7 +16,6 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -23,13 +24,13 @@ public class TaskController {
 
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
+    private final TaskMapper taskMapper;
 
-    public TaskController(TaskRepository taskRepository, UserRepository userRepository) {
+    public TaskController(TaskRepository taskRepository, UserRepository userRepository, TaskMapper taskMapper) {
         this.taskRepository = taskRepository;
         this.userRepository = userRepository;
+        this.taskMapper = taskMapper;
     }
-
-    public record CreateTaskRequest(@NotBlank String title, String description, @Min(0) BigDecimal budget) {}
 
     @PostMapping
     @PreAuthorize("hasRole('CLIENT')")
@@ -43,21 +44,22 @@ public class TaskController {
                 .status("OPEN")
                 .createdBy(user)
                 .build();
-        taskRepository.save(t);
-        return ResponseEntity.ok(t);
+        var savedTask = taskRepository.save(t);
+        return new ResponseEntity<>(taskMapper.toDto(savedTask), HttpStatus.CREATED);
     }
 
     @GetMapping
-    public List<Task> list() { return taskRepository.findAll(); }
+    public ResponseEntity<?> list() {
+        var tasks = taskRepository.findAll().stream().map(taskMapper::toDto).toList();
+        return ResponseEntity.ok(tasks);
+    }
 
     @GetMapping("/{id}")
     public ResponseEntity<?> get(@PathVariable Long id) {
         return taskRepository.findById(id)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .<ResponseEntity<?>>map(task -> ResponseEntity.ok(taskMapper.toDto(task)))
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Task not found")));
     }
-
-    public record UpdateTaskRequest(String title, String description, BigDecimal budget, String status) {}
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CLIENT')")
@@ -71,8 +73,8 @@ public class TaskController {
         if (req.description() != null) t.setDescription(req.description());
         if (req.budget() != null) t.setBudget(req.budget());
         if (req.status() != null) t.setStatus(req.status());
-        taskRepository.save(t);
-        return ResponseEntity.ok(t);
+        var updated = taskRepository.save(t);
+        return ResponseEntity.ok(taskMapper.toDto(updated));
     }
 
     @DeleteMapping("/{id}")
@@ -85,5 +87,11 @@ public class TaskController {
         }
         taskRepository.delete(t);
         return ResponseEntity.noContent().build();
+    }
+
+    public record CreateTaskRequest(@NotBlank String title, String description, @Min(0) BigDecimal budget) {
+    }
+
+    public record UpdateTaskRequest(String title, String description, BigDecimal budget, String status) {
     }
 }
