@@ -1,5 +1,6 @@
 package com.demo.backend.controller;
 
+import com.demo.backend.mappers.BidMapper;
 import com.demo.backend.model.Bid;
 import com.demo.backend.model.Task;
 import com.demo.backend.model.User;
@@ -8,6 +9,7 @@ import com.demo.backend.repository.TaskRepository;
 import com.demo.backend.repository.UserRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 public class BidController {
@@ -24,11 +27,13 @@ public class BidController {
     private final BidRepository bidRepository;
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
+    private final BidMapper bidMapper;
 
-    public BidController(BidRepository bidRepository, TaskRepository taskRepository, UserRepository userRepository) {
+    public BidController(BidRepository bidRepository, TaskRepository taskRepository, UserRepository userRepository, BidMapper bidMapper) {
         this.bidRepository = bidRepository;
         this.taskRepository = taskRepository;
         this.userRepository = userRepository;
+        this.bidMapper = bidMapper;
     }
 
     public record BidRequest(@Min(0) BigDecimal amount) {}
@@ -44,8 +49,8 @@ public class BidController {
             return ResponseEntity.badRequest().body(Map.of("error", "You have already bid on this task"));
         }
         Bid bid = Bid.builder().task(t).freelancer(freelancer).amount(req.amount()).status("PENDING").build();
-        bidRepository.save(bid);
-        return ResponseEntity.ok(bid);
+        var savedBid = bidRepository.save(bid);
+        return new ResponseEntity<>(bidMapper.toDto(savedBid), HttpStatus.CREATED);
     }
 
     @GetMapping("/api/tasks/{taskId}/bids")
@@ -57,7 +62,7 @@ public class BidController {
             return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
         }
         List<Bid> bids = bidRepository.findByTask(t);
-        return ResponseEntity.ok(bids);
+        return ResponseEntity.ok(bids.stream().map(bidMapper::toDto).collect(Collectors.toList()));
     }
 
     @PostMapping("/api/bids/{bidId}/accept")
