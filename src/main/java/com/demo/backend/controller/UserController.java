@@ -30,7 +30,7 @@ public class UserController {
         if (user == null) return ResponseEntity.status(404).body(Map.of("error", "User not found"));
         return ResponseEntity.ok(Map.of(
                 "id", user.getId(),
-                "email", user.getUsername(),
+                "username", user.getUsername(),
                 "email", user.getEmail(),
                 "role", user.getRole(),
                 "fullName", user.getFullName(),
