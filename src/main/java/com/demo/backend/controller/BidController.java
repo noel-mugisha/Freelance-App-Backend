@@ -4,6 +4,7 @@ import com.demo.backend.mappers.BidMapper;
 import com.demo.backend.model.Bid;
 import com.demo.backend.model.Task;
 import com.demo.backend.model.User;
+import com.demo.backend.dto.response.BidDto;
 import com.demo.backend.repository.BidRepository;
 import com.demo.backend.repository.TaskRepository;
 import com.demo.backend.repository.UserRepository;
@@ -15,10 +16,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -55,26 +56,58 @@ public class BidController {
 
     @GetMapping("/api/tasks/{taskId}/bids")
     @PreAuthorize("hasRole('CLIENT')")
+    @Transactional(readOnly = true)
     public ResponseEntity<?> viewBids(@AuthenticationPrincipal UserDetails principal, @PathVariable Long taskId) {
-        Task t = taskRepository.findById(taskId).orElse(null);
-        if (t == null) return ResponseEntity.status(404).body(Map.of("error", "Task not found"));
-        if (!t.getCreatedBy().getUsername().equals(principal.getUsername())) {
+        // First, verify the task exists and the user has access to it
+        Optional<Task> taskOpt = taskRepository.findById(taskId);
+        if (taskOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Task not found"));
+        }
+        Task task = taskOpt.get();
+        // Verify the current user is the task owner
+        if (!task.getCreatedBy().getUsername().equals(principal.getUsername())) {
             return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
         }
-        List<Bid> bids = bidRepository.findByTask(t);
-        return ResponseEntity.ok(bids.stream().map(bidMapper::toDto).collect(Collectors.toList()));
+        // Fetch bids with all required relationships
+        List<Bid> bids = bidRepository.findByTask(task);
+        // Convert to DTOs
+        List<BidDto> bidDtos = bids.stream()
+            .map(bidMapper::toDto)
+            .collect(Collectors.toList());
+        return ResponseEntity.ok(bidDtos);
     }
 
     @PostMapping("/api/bids/{bidId}/accept")
     @PreAuthorize("hasRole('CLIENT')")
+    @Transactional
     public ResponseEntity<?> accept(@AuthenticationPrincipal UserDetails principal, @PathVariable Long bidId) {
-        Bid bid = bidRepository.findById(bidId).orElse(null);
-        if (bid == null) return ResponseEntity.status(404).body(Map.of("error", "Bid not found"));
-        if (!bid.getTask().getCreatedBy().getUsername().equals(principal.getUsername())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
+        // First, verify the bid exists and load the task with its creator in a single query
+        Optional<Bid> bidOpt = bidRepository.findByIdWithTaskAndCreator(bidId);
+        if (bidOpt.isEmpty()) {
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Bid not found");
+            return ResponseEntity.status(404).body(response);
         }
+        
+        Bid bid = bidOpt.get();
+        
+        // Verify the current user is the task owner
+        if (!bid.getTask().getCreatedBy().getUsername().equals(principal.getUsername())) {
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Forbidden");
+            return ResponseEntity.status(403).body(response);
+        }
+        
+        // Update the bid status
         bid.setStatus("ACCEPTED");
+        // Save is not strictly necessary with @Transactional, but keeping it for clarity
         bidRepository.save(bid);
-        return ResponseEntity.ok(Map.of("message", "Bid accepted"));
+        
+        // Reject all other bids for this task
+        bidRepository.rejectOtherBids(bid.getTask().getId(), bidId);
+        
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Bid accepted successfully");
+        return ResponseEntity.ok(response);
     }
 }
