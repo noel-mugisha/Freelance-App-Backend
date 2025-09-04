@@ -48,3 +48,6 @@ aws:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+frontend:
+  url: ${FRONTEND_URL}
