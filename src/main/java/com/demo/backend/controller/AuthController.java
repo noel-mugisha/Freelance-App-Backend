@@ -76,6 +76,10 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Account not verified. Please check your email for the OTP."));
         }
 
+        if(user.getStatus().equals("SUSPENDED")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Account suspended."));
+        }
+
         try {
             Authentication auth = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(req.email(), req.password())
